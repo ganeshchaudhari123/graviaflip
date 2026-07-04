@@ -1,0 +1,932 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>GRAVIA: Flip Dash</title>
+
+<!--
+  =====================================================================
+  ADSTERRA INTEGRATION GUIDE (READ BEFORE PUBLISHING)
+  =====================================================================
+  This file has 3 clearly marked ad zones. Just paste your Adsterra
+  codes in the exact spots marked "PASTE ADSTERRA CODE HERE".
+
+  1) TOP BANNER   -> look for id="adBannerTop"     (use a 320x50 banner)
+  2) FOOTER BANNER-> look for id="adBannerFooter"  (use a 320x50 banner)
+  3) INTERSTITIAL -> look for id="adSlotInterstitial"
+     This one fires every time the player taps "PLAY AGAIN" or
+     "START GAME" (see showInterstitialAd() in the JS).
+     - If Adsterra gave you a "Social Bar" / "Popunder" / "Direct Link"
+       script, paste that <script> tag anywhere inside <head> or
+       right before </body> — those formats trigger themselves and
+       don't need a container div.
+     - If Adsterra gave you a "Native Banner" or in-page banner script,
+       paste it directly inside the #adSlotInterstitial div below.
+     - If you only have a Direct Link URL, un-comment the
+       window.open(...) line inside showInterstitialAd() and put your
+       link there instead.
+  =====================================================================
+-->
+
+<style>
+  :root{
+    --bg-void:#0b0a1a;
+    --bg-panel:#15132e;
+    --bg-panel-2:#1e1b42;
+    --line:#322d63;
+    --pink:#ff4d8d;
+    --amber:#ffc857;
+    --teal:#5ee6d0;
+    --text:#f4f2ff;
+    --text-dim:#9a94c4;
+  }
+
+  *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+
+  html,body{
+    margin:0; padding:0; width:100%; height:100%;
+    background:var(--bg-void);
+    overflow:hidden;
+    overscroll-behavior:none;
+    touch-action:none;
+    user-select:none;
+    -webkit-user-select:none;
+    font-family:'Rubik',system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+    color:var(--text);
+  }
+
+  @font-face{ font-display:swap; }
+
+  #app{
+    position:fixed; inset:0;
+    display:flex; flex-direction:column;
+    background:var(--bg-void);
+  }
+
+  /* ---------- AD BANNER SLOTS ---------- */
+  .ad-slot{
+    width:100%;
+    min-height:50px;
+    background:var(--bg-panel);
+    display:flex; align-items:center; justify-content:center;
+    flex-shrink:0;
+    border-bottom:1px solid var(--line);
+    font-size:11px;
+    letter-spacing:.08em;
+    color:var(--text-dim);
+    overflow:hidden;
+  }
+  #adBannerFooter{ border-bottom:none; border-top:1px solid var(--line); }
+
+  /* Responsive footer banner */
+  .desktop-banner{ display:none; }
+  .mobile-banner{ display:block; }
+  @media (min-width: 768px){
+    .desktop-banner{ display:block; }
+    .mobile-banner{ display:none; }
+  }
+
+  /* ---------- GAME AREA ---------- */
+  #gameWrap{
+    position:relative;
+    flex:1;
+    min-height:0;
+    background:radial-gradient(120% 140% at 50% -10%, #211c48 0%, var(--bg-void) 65%);
+  }
+  canvas{ position:absolute; inset:0; width:100%; height:100%; display:block; }
+
+  #hud{
+    position:absolute; top:10px; left:0; right:0;
+    display:flex; justify-content:space-between; align-items:flex-start;
+    padding:0 14px;
+    pointer-events:none;
+    font-family:'Orbitron',system-ui,sans-serif;
+  }
+  #scoreBox{ text-align:left; }
+  #scoreBox .val{ font-size:28px; font-weight:700; color:var(--text); text-shadow:0 0 14px rgba(255,77,141,.55); line-height:1; }
+  #scoreBox .lbl{ font-size:9px; letter-spacing:.2em; color:var(--text-dim); margin-top:2px; }
+  #bestBox{ text-align:right; }
+  #bestBox .val{ font-size:16px; font-weight:700; color:var(--amber); text-shadow:0 0 10px rgba(255,200,87,.5); }
+  #bestBox .lbl{ font-size:9px; letter-spacing:.2em; color:var(--text-dim); margin-top:2px; }
+
+  #muteBtn{
+    position:absolute; top:10px; left:50%; transform:translateX(-50%);
+    width:34px; height:34px; border-radius:50%;
+    background:rgba(255,255,255,.06);
+    border:1px solid var(--line);
+    display:flex; align-items:center; justify-content:center;
+    pointer-events:all; cursor:pointer; font-size:15px;
+  }
+
+  /* ---------- OVERLAY SCREENS ---------- */
+  .screen{
+    position:absolute; inset:0;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:14px;
+    background:linear-gradient(180deg, rgba(11,10,26,.55), rgba(11,10,26,.92));
+    backdrop-filter:blur(2px);
+    text-align:center;
+    padding:24px;
+    z-index:20;
+  }
+  .hidden{ display:none !important; }
+
+  /* ---------- LOADING SCREEN ---------- */
+  #loadingScreen{
+    position:absolute; inset:0;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:20px;
+    background:var(--bg-void);
+    z-index:100;
+  }
+  .loading-title{
+    font-family:'Orbitron',system-ui,sans-serif;
+    font-size:clamp(36px,10vw,56px);
+    font-weight:900;
+    letter-spacing:.05em;
+    background:linear-gradient(180deg,#ffffff, var(--pink) 120%);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    text-shadow:0 0 40px rgba(255,77,141,.5);
+    margin:0;
+  }
+  .loading-credit{
+    font-size:14px; color:var(--text-dim); letter-spacing:.15em;
+    margin:0;
+  }
+  .loading-spinner{
+    width:50px; height:50px;
+    border:3px solid rgba(255,77,141,.2);
+    border-top-color:var(--pink);
+    border-radius:50%;
+    animation:spin 1s linear infinite;
+  }
+  @keyframes spin{ to{ transform:rotate(360deg);} }
+
+  .title{
+    font-family:'Orbitron',system-ui,sans-serif;
+    font-size:clamp(32px,9vw,52px);
+    font-weight:900;
+    letter-spacing:.03em;
+    background:linear-gradient(180deg,#ffffff, var(--pink) 120%);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    text-shadow:0 0 30px rgba(255,77,141,.35);
+    margin:0;
+  }
+  .subtitle{
+    font-size:13px; color:var(--text-dim); max-width:280px; line-height:1.5;
+    margin:0;
+  }
+  .orb-demo{
+    width:64px; height:64px; border-radius:50%;
+    background:radial-gradient(circle at 35% 30%, #fff, var(--pink) 45%, #7a1c46 100%);
+    box-shadow:0 0 30px rgba(255,77,141,.65);
+    animation:floaty 1.6s ease-in-out infinite;
+    margin-bottom:4px;
+  }
+  @keyframes floaty{ 0%,100%{ transform:translateY(0);} 50%{ transform:translateY(-10px);} }
+
+  .btn{
+    font-family:'Orbitron',system-ui,sans-serif;
+    font-size:16px; font-weight:700; letter-spacing:.05em;
+    padding:16px 42px;
+    border-radius:14px;
+    border:none;
+    background:linear-gradient(135deg, var(--pink), #b8306a);
+    color:#fff;
+    box-shadow:0 8px 0 #7a1c46, 0 12px 24px rgba(255,77,141,.35);
+    cursor:pointer;
+    pointer-events:all;
+    transform:translateY(0);
+    transition:transform .08s ease, box-shadow .08s ease;
+  }
+  .btn:active{ transform:translateY(6px); box-shadow:0 2px 0 #7a1c46, 0 4px 10px rgba(255,77,141,.25); }
+  .btn.secondary{
+    background:linear-gradient(135deg, var(--teal), #1c8a78);
+    box-shadow:0 8px 0 #0f5c4f, 0 12px 24px rgba(94,230,208,.3);
+  }
+  .btn.secondary:active{ box-shadow:0 2px 0 #0f5c4f, 0 4px 10px rgba(94,230,208,.2); }
+
+  .stat-row{ display:flex; gap:22px; margin:4px 0 6px; }
+  .stat{ text-align:center; }
+  .stat .n{ font-family:'Orbitron',sans-serif; font-size:26px; font-weight:800; color:var(--amber); }
+  .stat .s{ font-size:10px; letter-spacing:.15em; color:var(--text-dim); }
+
+  .hint{
+    position:absolute; bottom:18px; left:0; right:0;
+    text-align:center; font-size:11px; color:var(--text-dim);
+    letter-spacing:.08em; pointer-events:none;
+    animation:pulse 1.8s ease-in-out infinite;
+  }
+  @keyframes pulse{ 0%,100%{opacity:.4;} 50%{opacity:1;} }
+
+  /* ---------- INTERSTITIAL AD MODAL ---------- */
+  #adModal{
+    position:absolute; inset:0; z-index:50;
+    background:rgba(5,4,14,.96);
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:16px;
+  }
+  #adModal .adFrame{
+    width:min(90%, 340px);
+    min-height:280px;
+    background:var(--bg-panel);
+    border:1px solid var(--line);
+    border-radius:16px;
+    display:flex; flex-direction:column; align-items:center; justify-content:flex-start;
+    gap:10px;
+    padding:20px;
+  }
+  #adSlotInterstitial{
+    width:100%;
+    min-height:250px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    background:rgba(255,255,255,0.05);
+    border-radius:8px;
+    border:1px solid rgba(255,255,255,0.15);
+  }
+  #adSlotInterstitial > div{
+    width:300px;
+    height:250px;
+    display:block;
+    background:rgba(0,0,0,0.3);
+    border-radius:4px;
+  }
+  #adSlotInterstitial iframe{
+    width:300px !important;
+    height:250px !important;
+    display:block !important;
+    border:none !important;
+  }
+  #adModal .adTag{ font-size:10px; letter-spacing:.2em; color:var(--text-dim); }
+  #adModal .adBody{ font-size:13px; color:var(--text-dim); text-align:center; }
+  #adCountdown{
+    font-family:'Orbitron',sans-serif; font-size:13px; color:var(--text-dim);
+  }
+  #adCloseBtn{
+    padding:10px 26px; border-radius:10px; border:1px solid var(--line);
+    background:rgba(255,255,255,.06); color:var(--text-dim);
+    font-family:'Orbitron',sans-serif; font-size:13px; letter-spacing:.05em;
+    pointer-events:none; opacity:.5; cursor:not-allowed;
+  }
+  #adCloseBtn.ready{
+    pointer-events:all; opacity:1; cursor:pointer;
+    background:linear-gradient(135deg, var(--pink), #b8306a); color:#fff;
+    border-color:transparent;
+  }
+</style>
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ============== TOP BANNER AD ============== -->
+  <div class="ad-slot" id="adBannerTop">
+    <!-- PASTE ADSTERRA CODE HERE (320x50 banner) -->
+    <script>
+      atOptions = {
+        'key' : 'bcae1e3d6aaae74180812aba3ab66b53',
+        'format' : 'iframe',
+        'height' : 50,
+        'width' : 320,
+        'params' : {}
+      };
+    </script>
+    <script src="https://www.highperformanceformat.com/bcae1e3d6aaae74180812aba3ab66b53/invoke.js"></script>
+  </div>
+
+  <div id="gameWrap">
+    <!-- ============== LOADING SCREEN ============== -->
+    <div id="loadingScreen">
+      <h1 class="loading-title">GRAVIA: Flip Dash</h1>
+      <div class="loading-spinner"></div>
+      <p class="loading-credit">Developed By Probizo</p>
+    </div>
+
+    <canvas id="game"></canvas>
+
+    <div id="hud">
+      <div id="scoreBox">
+        <div class="val" id="scoreVal">0</div>
+        <div class="lbl">SCORE</div>
+      </div>
+      <div id="bestBox">
+        <div class="val" id="bestVal">0</div>
+        <div class="lbl">BEST</div>
+      </div>
+    </div>
+
+    <button id="muteBtn">🔊</button>
+
+    <!-- ============== START SCREEN ============== -->
+    <div class="screen" id="startScreen">
+      <div class="orb-demo"></div>
+      <h1 class="title">GRAVIA</h1>
+      <p class="subtitle">Flip gravity. Dodge the spikes. Chase the highscore.<br>Tap anywhere to flip.</p>
+      <button class="btn" id="startBtn">START GAME</button>
+      <p class="hint" style="position:static;">TAP · CLICK · SPACE = FLIP GRAVITY</p>
+    </div>
+
+    <!-- ============== GAME OVER SCREEN ============== -->
+    <div class="screen hidden" id="overScreen">
+      <h1 class="title" style="font-size:clamp(24px,7vw,36px);">RUN OVER</h1>
+      <div class="stat-row">
+        <div class="stat"><div class="n" id="finalScore">0</div><div class="s">SCORE</div></div>
+        <div class="stat"><div class="n" id="finalBest">0</div><div class="s">BEST</div></div>
+        <div class="stat"><div class="n" id="finalCoins">0</div><div class="s">ORBS</div></div>
+      </div>
+      <button class="btn" id="retryBtn">PLAY AGAIN</button>
+    </div>
+
+    <!-- ============== INTERSTITIAL AD MODAL ============== -->
+    <div id="adModal" class="hidden">
+      <div class="adFrame">
+        <div class="adTag">ADVERTISEMENT</div>
+        <div id="adSlotInterstitial">
+          <!-- PASTE ADSTERRA NATIVE BANNER / IN-PAGE CODE HERE -->
+          <div id="container-4d586deccb76ffded0016f2be4b6a780" style="width:300px; height:250px; margin:0 auto;"></div>
+        </div>
+        <div id="adCountdown">Ad closes in 5s</div>
+      </div>
+      <button id="adCloseBtn">CLOSE AD ✕</button>
+    </div>
+
+  </div>
+
+  <!-- ============== FOOTER BANNER AD (Responsive) ============== -->
+  <div class="ad-slot" id="adBannerFooter">
+    <!-- Desktop Banner (728x90) - shows on screens >= 768px -->
+    <div class="desktop-banner">
+      <script>
+        atOptions = {
+          'key' : 'ece0dbfa7c7eec7c9e2b58cb76b89642',
+          'format' : 'iframe',
+          'height' : 90,
+          'width' : 728,
+          'params' : {}
+        };
+      </script>
+      <script src="https://www.highperformanceformat.com/ece0dbfa7c7eec7c9e2b58cb76b89642/invoke.js"></script>
+    </div>
+    <!-- Mobile Banner (320x50) - shows on screens < 768px -->
+    <div class="mobile-banner">
+      <script>
+        atOptions = {
+          'key' : 'bcae1e3d6aaae74180812aba3ab66b53',
+          'format' : 'iframe',
+          'height' : 50,
+          'width' : 320,
+          'params' : {}
+        };
+      </script>
+      <script src="https://www.highperformanceformat.com/bcae1e3d6aaae74180812aba3ab66b53/invoke.js"></script>
+    </div>
+  </div>
+
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ============================================================
+     CANVAS SETUP
+     ============================================================ */
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const wrap = document.getElementById('gameWrap');
+  let W = 0, H = 0, DPR = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+
+  function resize(){
+    W = wrap.clientWidth;
+    H = wrap.clientHeight;
+    canvas.width = Math.floor(W * DPR);
+    canvas.height = Math.floor(H * DPR);
+    ctx.setTransform(DPR,0,0,DPR,0,0);
+  }
+  window.addEventListener('resize', resize);
+  window.addEventListener('orientationchange', ()=>setTimeout(resize,200));
+  resize();
+
+  /* ============================================================
+     AUDIO (procedural, no external files)
+     ============================================================ */
+  let actx = null, muted = false;
+  function ensureAudio(){
+    if(!actx){
+      try{ actx = new (window.AudioContext || window.webkitAudioContext)(); }
+      catch(e){ actx = null; }
+    }
+  }
+  function beep(freq, dur, type, gainVal){
+    if(muted || !actx) return;
+    const o = actx.createOscillator();
+    const g = actx.createGain();
+    o.type = type || 'sine';
+    o.frequency.setValueAtTime(freq, actx.currentTime);
+    g.gain.setValueAtTime(gainVal || 0.15, actx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + dur);
+    o.connect(g); g.connect(actx.destination);
+    o.start();
+    o.stop(actx.currentTime + dur);
+  }
+  function sndFlip(){ beep(520, 0.09, 'triangle', 0.12); }
+  function sndCoin(){ beep(900, 0.12, 'square', 0.08); setTimeout(()=>beep(1300,0.1,'square',0.06),40); }
+  function sndCrash(){ beep(120, 0.35, 'sawtooth', 0.18); }
+
+  const muteBtn = document.getElementById('muteBtn');
+  muteBtn.addEventListener('click', (e)=>{
+    e.stopPropagation();
+    muted = !muted;
+    muteBtn.textContent = muted ? '🔇' : '🔊';
+  });
+
+  /* ============================================================
+     GAME STATE
+     ============================================================ */
+  const LANE_X_RATIO = 0.26;
+  const PLAYER_R = 15;
+  const GRAVITY = 1900;      // px/s^2
+  const FLIP_KICK = 300;     // instant velocity given on flip
+  const MAX_FALL = 900;
+
+  let state = 'start'; // start | playing | dead
+  let player, obstacles, particles, stars, coins;
+  let score = 0, coinsCollected = 0, best = 0;
+  let speed = 260;            // world scroll speed px/s
+  let spawnTimer = 0;
+  let elapsed = 0;
+  let lastTime = 0;
+  let shakeT = 0;
+
+  try{
+    const saved = localStorage.getItem('gravia_best');
+    if(saved) best = parseInt(saved,10) || 0;
+  }catch(e){ /* storage unavailable, session-only best */ }
+  document.getElementById('bestVal').textContent = best;
+
+  function resetGame(){
+    const px = W * LANE_X_RATIO;
+    player = {
+      x: px, y: H/2, vy: 0, r: PLAYER_R,
+      gravDir: 1,           // 1 = pulled down (on floor mode), -1 = pulled up
+      trail: []
+    };
+    obstacles = [];
+    coins = [];
+    particles = [];
+    stars = [];
+    for(let i=0;i<70;i++){
+      stars.push({ x: Math.random()*W, y: Math.random()*H, r: Math.random()*1.6+0.3, s: Math.random()*40+15 });
+    }
+    score = 0; coinsCollected = 0;
+    speed = 260;
+    spawnTimer = 0;
+    elapsed = 0;
+    shakeT = 0;
+    updateHud();
+  }
+
+  function updateHud(){
+    document.getElementById('scoreVal').textContent = Math.floor(score);
+  }
+
+  /* ============================================================
+     OBSTACLE SPAWNING
+     A gap "channel" is left open; blocks come from top and bottom.
+     ============================================================ */
+  function spawnObstacle(){
+    const minGap = Math.max(150, 260 - elapsed*2.2);
+    const gap = minGap + Math.random()*40;
+    const gapCenter = H*0.28 + Math.random()*H*0.44;
+    const topH = Math.max(0, gapCenter - gap/2);
+    const botY = gapCenter + gap/2;
+    const botH = Math.max(0, H - botY);
+    obstacles.push({
+      x: W + 40, w: 46,
+      topH, botH, botY,
+      passed: false,
+      spikeSeed: Math.random()
+    });
+    if(Math.random() < 0.65){
+      coins.push({
+        x: W + 40 + 23,
+        y: gapCenter + (Math.random()*40-20),
+        r: 8, taken:false, spin:0
+      });
+    }
+  }
+
+  /* ============================================================
+     PARTICLES
+     ============================================================ */
+  function spawnBurst(x,y,color,n){
+    for(let i=0;i<n;i++){
+      const a = Math.random()*Math.PI*2;
+      const sp = Math.random()*180+60;
+      particles.push({
+        x,y, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp,
+        life: 0.5+Math.random()*0.4, t:0, color, r: Math.random()*3+1.5
+      });
+    }
+  }
+
+  /* ============================================================
+     INPUT — flip gravity
+     ============================================================ */
+  function doFlip(){
+    if(state !== 'playing') return;
+    player.gravDir *= -1;
+    // Kick velocity in the SAME direction as the new gravity pull,
+    // so the orb instantly starts moving the way you just flipped it.
+    player.vy = FLIP_KICK * player.gravDir;
+    sndFlip();
+    spawnBurst(player.x, player.y, player.gravDir===1 ? '#ff4d8d' : '#5ee6d0', 10);
+  }
+
+  function pointerHandler(e){
+    ensureAudio();
+    if(actx && actx.state === 'suspended') actx.resume();
+    // Let buttons handle their own clicks — don't double-fire a flip
+    // when the tap landed on a UI button (Start / Retry / Mute / Close Ad).
+    if(e.target && e.target.closest && e.target.closest('button')) return;
+    if(state !== 'playing') return; // ignore background taps on menus
+    doFlip();
+    if(e && e.preventDefault) e.preventDefault();
+  }
+  wrap.addEventListener('pointerdown', pointerHandler, {passive:false});
+  window.addEventListener('keydown', (e)=>{
+    if(e.code !== 'Space') return;
+    e.preventDefault();
+    ensureAudio();
+    if(actx && actx.state === 'suspended') actx.resume();
+    if(state === 'start'){ document.getElementById('startBtn').click(); }
+    else if(state === 'playing'){ doFlip(); }
+  });
+
+  /* ============================================================
+     COLLISION
+     ============================================================ */
+  function circleRectHit(cx,cy,cr, rx,ry,rw,rh){
+    const nx = Math.max(rx, Math.min(cx, rx+rw));
+    const ny = Math.max(ry, Math.min(cy, ry+rh));
+    const dx = cx-nx, dy = cy-ny;
+    return (dx*dx+dy*dy) < (cr*cr);
+  }
+
+  /* ============================================================
+     MAIN UPDATE
+     ============================================================ */
+  function update(dt){
+    elapsed += dt;
+    speed = Math.min(560, 260 + elapsed*7.5);
+    score += dt * (speed/26);
+
+    // physics
+    player.vy += GRAVITY * dt * player.gravDir;
+    player.vy = Math.max(-MAX_FALL, Math.min(MAX_FALL, player.vy));
+    player.y += player.vy * dt;
+
+    player.trail.push({x:player.x, y:player.y});
+    if(player.trail.length > 14) player.trail.shift();
+
+    // ceiling/floor bounds = death
+    if(player.y - player.r < 0 || player.y + player.r > H){
+      killPlayer();
+      return;
+    }
+
+    // spawn
+    spawnTimer -= dt;
+    if(spawnTimer <= 0){
+      spawnObstacle();
+      const gapTime = Math.max(0.95, 1.7 - elapsed*0.012);
+      spawnTimer = gapTime * (300/speed) * 1.0 + 0.0;
+      spawnTimer = Math.max(0.8, 1.55 - elapsed*0.01);
+    }
+
+    // obstacles
+    for(let i=obstacles.length-1;i>=0;i--){
+      const o = obstacles[i];
+      o.x -= speed*dt;
+
+      if(!o.passed && o.x + o.w < player.x - player.r){
+        o.passed = true;
+        score += 5;
+      }
+      if(o.x + o.w < -10) { obstacles.splice(i,1); continue; }
+
+      if(circleRectHit(player.x, player.y, player.r*0.82, o.x, 0, o.w, o.topH) ||
+         circleRectHit(player.x, player.y, player.r*0.82, o.x, o.botY, o.w, o.botH)){
+        killPlayer();
+        return;
+      }
+    }
+
+    // coins
+    for(let i=coins.length-1;i>=0;i--){
+      const c = coins[i];
+      c.x -= speed*dt;
+      c.spin += dt*6;
+      if(c.x < -20){ coins.splice(i,1); continue; }
+      if(!c.taken){
+        const dx = c.x-player.x, dy = c.y-player.y;
+        if(dx*dx+dy*dy < (c.r+player.r)*(c.r+player.r)){
+          c.taken = true;
+          coinsCollected++;
+          score += 15;
+          sndCoin();
+          spawnBurst(c.x, c.y, '#ffc857', 12);
+          coins.splice(i,1);
+        }
+      }
+    }
+
+    // particles
+    for(let i=particles.length-1;i>=0;i--){
+      const p = particles[i];
+      p.t += dt;
+      if(p.t > p.life){ particles.splice(i,1); continue; }
+      p.x += p.vx*dt; p.y += p.vy*dt;
+      p.vx *= 0.94; p.vy *= 0.94;
+    }
+
+    // stars
+    for(const s of stars){
+      s.x -= s.s*dt*0.4;
+      if(s.x < -5){ s.x = W+5; s.y = Math.random()*H; }
+    }
+
+    if(shakeT > 0) shakeT -= dt;
+
+    updateHud();
+  }
+
+  function killPlayer(){
+    if(state !== 'playing') return;
+    state = 'dead';
+    sndCrash();
+    shakeT = 0.35;
+    spawnBurst(player.x, player.y, '#ff4d8d', 26);
+    if(score > best){
+      best = Math.floor(score);
+      try{ localStorage.setItem('gravia_best', String(best)); }catch(e){}
+    }
+    document.getElementById('bestVal').textContent = best;
+    setTimeout(showOverScreen, 550);
+  }
+
+  /* ============================================================
+     RENDER
+     ============================================================ */
+  function draw(){
+    ctx.clearRect(0,0,W,H);
+
+    let ox=0, oy=0;
+    if(shakeT > 0){
+      ox = (Math.random()-0.5)*8*shakeT/0.35;
+      oy = (Math.random()-0.5)*8*shakeT/0.35;
+    }
+    ctx.save();
+    ctx.translate(ox,oy);
+
+    // stars
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    for(const s of stars){
+      ctx.globalAlpha = 0.25 + (s.r/2);
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.r, 0, Math.PI*2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    // gravity zone tint (top = pink zone when pulled up, bottom = teal)
+    const zoneH = H*0.10;
+    let g1 = ctx.createLinearGradient(0,0,0,zoneH);
+    g1.addColorStop(0, 'rgba(255,77,141,0.16)');
+    g1.addColorStop(1, 'rgba(255,77,141,0)');
+    ctx.fillStyle = g1;
+    ctx.fillRect(0,0,W,zoneH);
+
+    let g2 = ctx.createLinearGradient(0,H-zoneH,0,H);
+    g2.addColorStop(0, 'rgba(94,230,208,0)');
+    g2.addColorStop(1, 'rgba(94,230,208,0.16)');
+    ctx.fillStyle = g2;
+    ctx.fillRect(0,H-zoneH,W,zoneH);
+
+    if(state !== 'start'){
+      // obstacles
+      for(const o of obstacles){
+        drawBlock(o.x, 0, o.w, o.topH, true, o.spikeSeed);
+        drawBlock(o.x, o.botY, o.w, o.botH, false, o.spikeSeed);
+      }
+      // coins
+      for(const c of coins){
+        ctx.save();
+        ctx.translate(c.x, c.y);
+        ctx.rotate(c.spin);
+        const grad = ctx.createRadialGradient(0,0,0,0,0,c.r*1.6);
+        grad.addColorStop(0,'#fff6d8');
+        grad.addColorStop(1,'#ffc857');
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.ellipse(0,0,c.r, c.r*0.55+Math.abs(Math.cos(c.spin))*c.r*0.45, 0,0,Math.PI*2);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      // player trail
+      for(let i=0;i<player.trail.length;i++){
+        const t = player.trail[i];
+        const a = (i/player.trail.length);
+        ctx.globalAlpha = a*0.35;
+        ctx.fillStyle = player.gravDir===1 ? '#ff4d8d' : '#5ee6d0';
+        ctx.beginPath();
+        ctx.arc(t.x, t.y, player.r*a*0.8, 0, Math.PI*2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+
+      // player orb
+      const glowColor = player.gravDir===1 ? '#ff4d8d' : '#5ee6d0';
+      ctx.shadowColor = glowColor;
+      ctx.shadowBlur = 22;
+      const pg = ctx.createRadialGradient(player.x-5,player.y-6,2, player.x,player.y,player.r*1.4);
+      pg.addColorStop(0,'#ffffff');
+      pg.addColorStop(0.5, glowColor);
+      pg.addColorStop(1,'#2a1030');
+      ctx.fillStyle = pg;
+      ctx.beginPath();
+      ctx.arc(player.x, player.y, player.r, 0, Math.PI*2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+
+      // particles
+      for(const p of particles){
+        ctx.globalAlpha = Math.max(0,1-p.t/p.life);
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(p.x,p.y,p.r,0,Math.PI*2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    ctx.restore();
+  }
+
+  function drawBlock(x,y,w,h, isTop, seed){
+    if(h<=0) return;
+    const grad = ctx.createLinearGradient(x,y,x+w,y);
+    grad.addColorStop(0,'#2a2560');
+    grad.addColorStop(0.5,'#3a2f78');
+    grad.addColorStop(1,'#2a2560');
+    ctx.fillStyle = grad;
+    ctx.fillRect(x,y,w,h);
+
+    ctx.strokeStyle = 'rgba(255,77,141,0.5)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x+1,y+1,w-2,Math.max(0,h-2));
+
+    // spikes along the edge facing the play field
+    const edgeY = isTop ? y+h : y;
+    const dir = isTop ? 1 : -1;
+    const spikeCount = 3;
+    const spikeW = w/spikeCount;
+    ctx.fillStyle = '#ff4d8d';
+    for(let i=0;i<spikeCount;i++){
+      const sx = x + i*spikeW;
+      const sh = 14 + ((Math.sin(seed*10+i)+1)*6);
+      ctx.beginPath();
+      ctx.moveTo(sx, edgeY);
+      ctx.lineTo(sx+spikeW/2, edgeY + dir*sh);
+      ctx.lineTo(sx+spikeW, edgeY);
+      ctx.closePath();
+      ctx.fill();
+    }
+  }
+
+  /* ============================================================
+     GAME LOOP
+     ============================================================ */
+  function loop(ts){
+    if(!lastTime) lastTime = ts;
+    let dt = (ts - lastTime)/1000;
+    lastTime = ts;
+    dt = Math.min(dt, 0.033); // clamp to avoid huge jumps on tab-switch
+
+    if(state === 'playing') update(dt);
+    draw();
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+
+  /* ============================================================
+     SCREEN MANAGEMENT
+     ============================================================ */
+  const startScreen = document.getElementById('startScreen');
+  const overScreen = document.getElementById('overScreen');
+
+  function startGame(){
+    resetGame();
+    state = 'playing';
+    startScreen.classList.add('hidden');
+    overScreen.classList.add('hidden');
+  }
+
+  function showOverScreen(){
+    document.getElementById('finalScore').textContent = Math.floor(score);
+    document.getElementById('finalBest').textContent = best;
+    document.getElementById('finalCoins').textContent = coinsCollected;
+    overScreen.classList.remove('hidden');
+  }
+
+  document.getElementById('startBtn').addEventListener('click', (e)=>{
+    e.stopPropagation();
+    ensureAudio();
+    showInterstitialAd(()=> startGame());
+  });
+
+  document.getElementById('retryBtn').addEventListener('click', (e)=>{
+    e.stopPropagation();
+    showInterstitialAd(()=> startGame());
+  });
+
+  /* ============================================================
+     INTERSTITIAL AD FLOW
+     Called before starting / restarting a run.
+     Replace the inside of #adSlotInterstitial with your real
+     Adsterra ad tag, or use the window.open() line below if you
+     only have a Direct Link.
+     ============================================================ */
+  const adModal = document.getElementById('adModal');
+  const adCloseBtn = document.getElementById('adCloseBtn');
+  const adCountdownEl = document.getElementById('adCountdown');
+  let adTimer = null;
+
+  function showInterstitialAd(onDone){
+    // --- OPTIONAL: Adsterra Direct Link fallback ---
+    // window.open('https://YOUR-ADSTERRA-DIRECT-LINK', '_blank');
+
+    adModal.classList.remove('hidden');
+    adCloseBtn.classList.remove('ready');
+    let secs = 5;
+    adCountdownEl.textContent = 'Ad closes in ' + secs + 's';
+
+    // Dynamically load ad script when modal is shown
+    const existingScript = document.querySelector('#adsterra-script');
+    if(existingScript) existingScript.remove();
+    
+    // Set atOptions before loading the script
+    window.atOptions = {
+      'key' : '4d586deccb76ffded0016f2be4b6a780',
+      'format' : 'iframe',
+      'height' : 250,
+      'width' : 300,
+      'params' : {}
+    };
+    
+    const adScript = document.createElement('script');
+    adScript.id = 'adsterra-script';
+    adScript.src = 'https://www.highperformanceformat.com/4d586deccb76ffded0016f2be4b6a780/invoke.js';
+    document.getElementById('adSlotInterstitial').appendChild(adScript);
+
+    clearInterval(adTimer);
+    adTimer = setInterval(()=>{
+      secs -= 1;
+      if(secs <= 0){
+        clearInterval(adTimer);
+        adCountdownEl.textContent = 'You can close the ad now';
+        adCloseBtn.classList.add('ready');
+      } else {
+        adCountdownEl.textContent = 'Ad closes in ' + secs + 's';
+      }
+    }, 1000);
+
+    adCloseBtn.onclick = function(e){
+      e.stopPropagation();
+      if(!adCloseBtn.classList.contains('ready')) return;
+      adModal.classList.add('hidden');
+      clearInterval(adTimer);
+      if(adScript && adScript.parentNode) adScript.remove();
+      onDone();
+    };
+  }
+
+  /* Keep canvas crisp after layout settles */
+  setTimeout(resize, 50);
+  resetGame();
+  draw();
+
+  /* Loading screen - hide after 2 seconds */
+  const loadingScreen = document.getElementById('loadingScreen');
+  setTimeout(()=>{
+    loadingScreen.classList.add('hidden');
+  }, 2000);
+
+})();
+</script>
+</body>
+</html>
